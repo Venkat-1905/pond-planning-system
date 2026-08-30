@@ -311,11 +311,15 @@ function renderResultsOnMap(data) {
         marker.bindPopup(`
             <div class="text-xs space-y-1.5 p-1">
                 <p class="font-bold text-emerald-400 text-sm">Option #${site.rank}: Optimal Pond Site</p>
+                <p class="text-slate-300"><strong>Coords:</strong> ${site.lat.toFixed(5)}, ${site.lon.toFixed(5)}</p>
                 <p class="text-slate-300"><strong>Score:</strong> ${site.suitability_score}/100</p>
                 <p class="text-slate-300"><strong>Elevation:</strong> ${site.elevation_m} m | <strong>Slope:</strong> ${site.slope_pct}%</p>
                 <p class="text-slate-300"><strong>Catchment Area:</strong> ${(site.estimated_catchment_m2 / 10000).toFixed(1)} ha</p>
             </div>
         `);
+        marker.on("click", () => {
+            handleManualMapClick(site.lat, site.lon);
+        });
     });
 
     const container = document.getElementById("candidate-container");

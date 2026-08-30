@@ -1,13 +1,14 @@
 """
-Pond Site Optimization, River Corridor Exclusion, Rainfall Fallback Chain, and Hydrological Sizing.
+Pond Site Optimization, Natural Depression Index (TPI), River Corridor Exclusion,
+Rainfall Fallback Chain, and Hydrological Sizing.
 Implements land-cover runoff coefficient lookup, multi-source rainfall query,
-riverbed avoidance buffer, and trapezoidal reservoir geometry design.
+natural amphitheater/depression detection, and trapezoidal reservoir geometry design.
 """
 
 import math
 import requests
 import numpy as np
-from scipy.ndimage import binary_dilation
+from scipy.ndimage import uniform_filter, binary_dilation
 from typing import List, Dict, Any, Optional, Tuple
 from backend.core.dem_interpolator import DEMGrid
 from backend.core.hydrology import HydrologyEngine
@@ -71,15 +72,15 @@ class PondOptimizer:
     def find_candidate_pond_sites(
         self,
         top_k: int = 3,
-        min_separation_m: float = 400.0,
-        river_buffer_m: float = 300.0,
-        river_acc_threshold_ha: float = 25.0
+        min_separation_m: float = 300.0,
+        river_buffer_m: float = 180.0,
+        river_acc_threshold_ha: float = 30.0
     ) -> List[PondCandidate]:
         """
         Identifies top K suitable village pond locations:
-        - Detects and strictly EXCLUDES the main river course, riverbanks, and floodplains.
-        - Targets elevated agricultural farm fields (10 to 30 ha micro-catchments).
-        - Prioritizes gentle slopes (< 3%) for stable earthen bund construction.
+        - Detects natural terrain retention bowls using Topographic Position Index (TPI).
+        - Strictly excludes the western perennial river course and active floodway.
+        - Prioritizes gentle slopes (< 3%) and natural water harvesting amphitheaters.
         - Applies non-maximum spatial suppression to provide distinct geographic alternatives.
         """
         nrows, ncols = self.dem.nrows, self.dem.ncols
@@ -87,49 +88,43 @@ class PondOptimizer:
         acc_ha = self.hydro.flow_acc.astype(float) * cell_area_ha
         slope = self.dem.slope_pct
         elev = self.dem.elevation
-        relief = self.dem.relief if self.dem.relief > 0 else 1.0
 
-        # 1. Comprehensive River & Floodplain Detection & Buffer
-        # Identify main river stem
-        river_thresh = min(river_acc_threshold_ha, max(15.0, float(np.max(acc_ha)) * 0.15))
-        river_stem = acc_ha >= river_thresh
-
-        # 300m spatial dilation buffer around river stem
-        buffer_cells = max(5, int(round(river_buffer_m / self.dem.cell_size)))
+        # 1. Western River Stem & Buffer Exclusion
+        river_cells = (acc_ha >= river_acc_threshold_ha) & (elev < (self.dem.min_elev + 0.25 * self.dem.relief))
+        buffer_cells = max(3, int(round(river_buffer_m / self.dem.cell_size)))
         y, x = np.ogrid[-buffer_cells:buffer_cells+1, -buffer_cells:buffer_cells+1]
         struct = (x**2 + y**2) <= buffer_cells**2
-        river_corridor_mask = binary_dilation(river_stem, structure=struct)
+        river_corridor_mask = binary_dilation(river_cells, structure=struct)
 
-        # Low valley floor flood zone (lowest 22% relief envelope connected to river)
-        low_floodplain = (elev < (self.dem.min_elev + 0.22 * relief)) & binary_dilation(river_stem, iterations=15)
-        river_exclusion_zone = river_corridor_mask | low_floodplain
+        # 2. Topographic Position Index (TPI) - detects natural basins and bowls
+        window_size = int(round(180.0 / self.dem.cell_size))
+        mean_elev_local = uniform_filter(elev, size=window_size)
+        tpi = elev - mean_elev_local
 
-        # 2. Upland Farm Pond Micro-Catchment Suitability Score (50 pts max)
-        # Optimal farm pond catchment is 10-25 ha (bell curve peak at 15 ha)
-        catchment_score = np.exp(-0.5 * ((acc_ha - 15.0) / 7.0)**2) * 50.0
-        # Hard limits: only allow micro-catchments between 3 ha and 35 ha
-        catchment_score[(acc_ha < 3.0) | (acc_ha > 35.0)] = 0.0
+        # 3. Natural Bowl & Depression Score (45 pts max)
+        # Deep natural bowls (negative TPI) naturally hold rainwater with minimal earthwork
+        depression_score = np.clip(-tpi * 5.0, 0.0, 45.0)
 
-        # 3. Slope Suitability Score (35 pts max)
-        # Ideal: 0-2% = 35 pts, 2-4% = 15-35 pts, >4% = 0 pts
+        # 4. Slope Score (35 pts max)
+        # Ideal: 0-2% = 35 pts, 2-4% = 15-35 pts, >4.5% = 0 pts
         slope_score = np.zeros_like(slope)
         slope_score[slope <= 2.0] = 35.0
-        mask_s = (slope > 2.0) & (slope <= 4.0)
-        slope_score[mask_s] = 35.0 - ((slope[mask_s] - 2.0) / 2.0) * 20.0
+        mask_s = (slope > 2.0) & (slope <= 4.5)
+        slope_score[mask_s] = 35.0 - ((slope[mask_s] - 2.0) / 2.5) * 20.0
 
-        # 4. Upland Agricultural Elevation Score (15 pts max)
-        # Favors upland farming plateaus safe above the river valley
-        elev_score = np.clip((elev - (self.dem.min_elev + 6.0)) / (relief - 6.0), 0.0, 1.0) * 15.0
+        # 5. Hydrological Convergence & Micro-Catchment Score (25 pts max)
+        catch_score = np.exp(-0.5 * ((acc_ha - 10.0) / 6.0)**2) * 25.0
+        catch_score[acc_ha > 45.0] = 0.0
 
-        total_score_grid = catchment_score + slope_score + elev_score
+        total_score_grid = depression_score + slope_score + catch_score
 
-        # 5. Apply River & Slope Exclusions
-        total_score_grid[river_exclusion_zone] = 0.0  # ZERO OUT ENTIRE RIVER & FLOOD BUFFER
-        total_score_grid[slope > 4.0] = 0.0           # EXCLUDE STEEPER SLOPES
+        # Apply River & Slope Exclusions
+        total_score_grid[river_corridor_mask] = 0.0  # ZERO OUT RIVER
+        total_score_grid[slope > 4.5] = 0.0          # EXCLUDE STEEP SLOPES
 
-        # Margin buffer (reject outer 8% border cells)
-        margin_r = max(5, int(nrows * 0.08))
-        margin_c = max(5, int(ncols * 0.08))
+        # Margin buffer (reject outer 5% border cells)
+        margin_r = max(4, int(nrows * 0.05))
+        margin_c = max(4, int(ncols * 0.05))
         total_score_grid[:margin_r, :] = 0.0
         total_score_grid[-margin_r:, :] = 0.0
         total_score_grid[:, :margin_c] = 0.0
@@ -154,17 +149,19 @@ class PondOptimizer:
             u_cells = int(self.hydro.flow_acc[r, c])
             c_area_m2 = round(u_cells * self.hydro.cell_area_m2, 1)
             c_ha = round(c_area_m2 / 10000.0, 1)
+            tpi_val = round(float(tpi[r, c]), 2)
 
+            is_natural_bowl = tpi_val <= -2.0
             reasons = [
-                f"Safe upland agricultural field: Fully excluded from main riverbed and flood buffer (>300m buffer)",
-                f"Optimal farm micro-catchment ({c_ha} ha) ideal for local crop irrigation without flood risk",
-                f"Gentle ground slope ({slope_p}%) minimizing earthwork and ensuring stable earthen bunds"
+                f"Natural retention amphitheater (TPI: {tpi_val}m): Natural terrain bowl provides maximum storage with minimal earth excavation" if is_natural_bowl else "Optimal agricultural plateau micro-catchment",
+                f"Safe off-stream site: Excluded from main river channel and flood buffer (>180m buffer)",
+                f"Gentle ground slope ({slope_p}%) ensuring high embankment stability and minimal seepage"
             ]
 
-            recommendation = "Highly Recommended for Primary Village Storage Pond" if rank == 1 else f"Recommended Alternative Site (Option {rank})"
+            recommendation = "Highly Recommended for Primary Village Storage Pond (Natural Retention Bowl)" if rank == 1 else f"Recommended Alternative Site (Option {rank})"
 
             # Normalize score to 0-100 scale
-            normalized_score = round(min(100.0, (best_score / 95.0) * 100.0), 1)
+            normalized_score = round(min(100.0, (best_score / 85.0) * 100.0), 1)
 
             candidates.append(PondCandidate(
                 rank=rank,

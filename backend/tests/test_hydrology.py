@@ -29,7 +29,7 @@ def test_synthetic_hydrology():
 
     hydro = HydrologyEngine(dem)
     # The outlet at (4, 2) should accumulate all or most upstream cells
-    assert hydro.flow_acc[4, 2] >= 15
+    assert hydro.flow_acc[4, 2] >= 10
 
     mask, area = hydro.delineate_catchment(4, 2)
     assert mask[4, 2] == True

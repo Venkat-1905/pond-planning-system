@@ -71,11 +71,13 @@ class DEMGrid:
         row = int(np.clip(round((self.y_coords[0] - y) / self.cell_size), 0, self.nrows - 1))
         return row, col
 
-    def grid_to_metric(self, row: int, col: int) -> Tuple[float, float]:
-        col = max(0, min(self.ncols - 1, col))
-        row = max(0, min(self.nrows - 1, row))
-        x = float(self.x_coords[col])
-        y = float(self.y_coords[row])
+    def grid_to_metric(self, row: float, col: float) -> Tuple[float, float]:
+        col = max(0.0, min(float(self.ncols - 1), float(col)))
+        row = max(0.0, min(float(self.nrows - 1), float(row)))
+        x0 = float(self.x_coords[0])
+        y0 = float(self.y_coords[0])
+        x = x0 + col * self.cell_size
+        y = y0 - row * self.cell_size
         return x, y
 
     def get_slope_at(self, row: int, col: int) -> float:
