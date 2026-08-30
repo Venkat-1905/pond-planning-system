@@ -22,7 +22,7 @@ echo "========================================================================"
 echo "[1/4] Ensuring remote workspace directory exists..."
 ssh -p ${REMOTE_SSH_PORT} ${REMOTE_USER}@${REMOTE_HOST} "mkdir -p ${REMOTE_DIR}"
 
-# 2. Sync Codebase Files via tar over SSH (no rsync dependency required)
+# 2. Sync Codebase Files via tar over SSH
 echo "[2/4] Transferring project files via compressed stream..."
 tar --exclude=".venv" \
     --exclude="__pycache__" \
@@ -30,33 +30,31 @@ tar --exclude=".venv" \
     --exclude=".git" \
     -czf - . | ssh -p ${REMOTE_SSH_PORT} ${REMOTE_USER}@${REMOTE_HOST} "tar -xzf - -C ${REMOTE_DIR}"
 
-# 3. Setup Python Environment & Dependencies on Remote VM
-echo "[3/4] Setting up remote Python environment & dependencies..."
+# 3. Setup Python Dependencies on Remote VM
+echo "[3/4] Installing Python dependencies on remote VM..."
 ssh -p ${REMOTE_SSH_PORT} ${REMOTE_USER}@${REMOTE_HOST} "bash -s" << REMOTE_SCRIPT
 cd ${REMOTE_DIR}
-if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
-fi
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+
+# Install dependencies using user/break-system-packages flag for Ubuntu 24.04/PEP 668 environments
+python3 -m pip install --break-system-packages -r requirements.txt || \
+python3 -m pip install --user --break-system-packages -r requirements.txt || \
+pip install --break-system-packages -r requirements.txt
 REMOTE_SCRIPT
 
 # 4. Start Application on Port
 echo "[4/4] Starting FastAPI Uvicorn server on port ${APP_PORT}..."
 ssh -p ${REMOTE_SSH_PORT} ${REMOTE_USER}@${REMOTE_HOST} "bash -s" << REMOTE_SCRIPT
 cd ${REMOTE_DIR}
-source .venv/bin/activate
 
 # Kill any existing server running on this port
-pkill -f "uvicorn backend.app:app.*--port ${APP_PORT}" || true
+pkill -f "uvicorn.*--port ${APP_PORT}" || true
 
 # Start server in background with nohup
-nohup uvicorn backend.app:app --host 0.0.0.0 --port ${APP_PORT} > server.log 2>&1 &
+nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port ${APP_PORT} > server.log 2>&1 &
 sleep 3
 
 # Verify process is active
-if pgrep -f "uvicorn backend.app:app.*--port ${APP_PORT}" > /dev/null; then
+if pgrep -f "uvicorn.*--port ${APP_PORT}" > /dev/null; then
     echo "Server successfully running on port ${APP_PORT}!"
 else
     echo "Server log output:"
