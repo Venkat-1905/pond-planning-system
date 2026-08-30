@@ -2,7 +2,7 @@
 # ==============================================================================
 # DEPLOYMENT SCRIPT FOR VILLAGE POND PLANNING SYSTEM
 # Target Server: stu9_sys1 (10.1.75.51) | SSH Port: 2233
-# External Host Ports: 5233, 6233, 7233 -> Container Internal Ports: 5000, 6000, 7000
+# Allocated Ports: 3233, 4233, 5233, 6233, 7233 (and 3000, 4000, 5000, 6000, 7000)
 # ==============================================================================
 
 set -e
@@ -14,7 +14,7 @@ REMOTE_DIR="pond_system"
 
 echo "========================================================================"
 echo " Deploying Village Pond Planning System to ${REMOTE_USER}@${REMOTE_HOST}"
-echo " SSH Port: ${REMOTE_SSH_PORT}"
+echo " SSH Port: ${REMOTE_SSH_PORT} (stu9_sys1)"
 echo "========================================================================"
 
 # 1. Create Remote Directory
@@ -29,7 +29,7 @@ tar --exclude=".venv" \
     --exclude=".git" \
     -czf - . | ssh -p ${REMOTE_SSH_PORT} ${REMOTE_USER}@${REMOTE_HOST} "tar -xzf - -C ${REMOTE_DIR}"
 
-# 3. Setup Python Dependencies & Launch Server on Remote VM
+# 3. Setup Python Dependencies & Launch Servers across All Allocated Ports
 echo "[3/4] Installing dependencies & launching server on remote VM..."
 ssh -p ${REMOTE_SSH_PORT} ${REMOTE_USER}@${REMOTE_HOST} "bash -s" << 'REMOTE_SCRIPT'
 cd pond_system
@@ -43,30 +43,29 @@ echo "Stopping any previous instances..."
 pkill -f "uvicorn.*backend.app:app" || true
 sleep 1
 
-echo "Starting Uvicorn servers on internal ports (5000, 6000, 7000, 5233)..."
-# Start on port 5000 (mapped to external 5233)
-nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 5000 > server_5000.log 2>&1 &
-# Start on port 6000 (mapped to external 6233)
-nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 6000 > server_6000.log 2>&1 &
-# Start on port 7000 (mapped to external 7233)
-nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 7000 > server_7000.log 2>&1 &
-# Start directly on port 5233 as well in case direct mapping is used
-nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 5233 > server_5233.log 2>&1 &
+echo "Starting Uvicorn servers across all allocated ports..."
+# Bind both container internal ports (3000, 4000, 5000, 6000, 7000) and direct ports (3233, 4233, 5233, 6233, 7233)
+for port in 5000 6000 7000 3000 4000 5233 6233 7233 3233 4233; do
+    nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port ${port} > server_${port}.log 2>&1 &
+done
 
 sleep 3
 
-echo "--- Active Ports Check ---"
-for p in 5000 6000 7000 5233; do
-    res=$(curl -s http://localhost:${p}/health || echo "FAILED")
-    echo "Port ${p}: ${res}"
+echo "--- Active Ports Health Verification ---"
+for port in 5000 6000 7000 5233 6233 7233; do
+    res=$(curl -s http://localhost:${port}/health || echo "FAILED")
+    echo "Port ${port}: ${res}"
 done
 REMOTE_SCRIPT
 
 echo "========================================================================"
-echo " [4/4] Deployment Verified!"
-echo " Primary External URLs to open in browser:"
-echo "   - http://${REMOTE_HOST}:5233/ (Web Dashboard UI)"
-echo "   - http://${REMOTE_HOST}:5233/docs (Interactive Swagger UI)"
-echo "   - http://${REMOTE_HOST}:6233/ (Alternative Port)"
-echo "   - http://${REMOTE_HOST}:7233/ (Alternative Port)"
+echo " [4/4] Deployment Verified on stu9_sys1!"
+echo ""
+echo " You can access your working system at any of these URLs:"
+echo "   - http://${REMOTE_HOST}:5233/       (Web Dashboard UI)"
+echo "   - http://${REMOTE_HOST}:5233/docs   (Interactive Swagger API)"
+echo "   - http://${REMOTE_HOST}:6233/       (Alternative Port)"
+echo "   - http://${REMOTE_HOST}:7233/       (Alternative Port)"
+echo "   - http://${REMOTE_HOST}:3233/       (Alternative Port)"
+echo "   - http://${REMOTE_HOST}:4233/       (Alternative Port)"
 echo "========================================================================"
