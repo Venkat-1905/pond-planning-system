@@ -118,7 +118,7 @@ async def analyze_contour(
     parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, file.filename or "contour.kml")
     candidates = optimizer.find_candidate_pond_sites(top_k=3)
 
-    contours_geo = parsed_map.to_geojson(max_features=500) if include_contours_geojson else None
+    contours_geo = parsed_map.to_geojson(max_features=None) if include_contours_geojson else None
 
     return TerrainAnalysisResponse(
         status="success",
@@ -314,7 +314,7 @@ async def process_all_unified(
         storage_efficiency=storage_efficiency
     )
 
-    contours_geo = parsed_map.to_geojson(max_features=500)
+    contours_geo = parsed_map.to_geojson(max_features=None)
 
     terrain_resp = TerrainAnalysisResponse(
         status="success",
