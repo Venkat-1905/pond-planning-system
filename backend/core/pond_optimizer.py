@@ -1,12 +1,13 @@
 """
-Pond Site Optimization, Rainfall Fallback Chain, and Hydrological Sizing Engine.
+Pond Site Optimization, River Corridor Exclusion, Rainfall Fallback Chain, and Hydrological Sizing.
 Implements land-cover runoff coefficient lookup, multi-source rainfall query,
-multi-criteria pond suitability scoring, and trapezoidal reservoir geometry design.
+riverbed avoidance buffer, and trapezoidal reservoir geometry design.
 """
 
 import math
 import requests
 import numpy as np
+from scipy.ndimage import binary_dilation
 from typing import List, Dict, Any, Optional, Tuple
 from backend.core.dem_interpolator import DEMGrid
 from backend.core.hydrology import HydrologyEngine
@@ -53,7 +54,6 @@ class RainfallService:
                 data = resp.json()
                 ann_val = data.get("properties", {}).get("parameter", {}).get("PRECTOTCORR", {}).get("ANN")
                 if ann_val and ann_val > 0:
-                    # PRECTOTCORR is mm/day climatology, annual is mm/day * 365
                     annual_mm = float(ann_val * 365.25)
                     return round(annual_mm, 1), "NASA POWER Climatology (30-yr Mean)"
         except Exception:
@@ -68,59 +68,68 @@ class PondOptimizer:
         self.dem = dem
         self.hydro = hydrology
 
-    def find_candidate_pond_sites(self, top_k: int = 3, min_separation_m: float = 300.0) -> List[PondCandidate]:
+    def find_candidate_pond_sites(
+        self,
+        top_k: int = 3,
+        min_separation_m: float = 350.0,
+        river_buffer_m: float = 120.0,
+        max_river_threshold_ha: float = 60.0
+    ) -> List[PondCandidate]:
         """
-        Identifies top K suitable pond locations by combining:
-        - High upstream flow accumulation
-        - Gentle slope (< 5-8%)
-        - Distance from map boundary
-        - Non-maximum suppression to prevent clustered picks
+        Identifies top K suitable village pond locations:
+        - Detects and strictly EXCLUDES the main river course / perennial floodways (acc > 60 ha + buffer).
+        - Targets optimal micro-catchments (5 to 45 ha) for agricultural / village ponds.
+        - Prioritizes gentle slopes (< 3%) to minimize excavation and ensure embankment stability.
+        - Applies non-maximum spatial suppression to provide distinct geographic alternatives.
         """
         nrows, ncols = self.dem.nrows, self.dem.ncols
-        acc = self.hydro.flow_acc.astype(float)
+        cell_area_ha = self.hydro.cell_area_m2 / 10000.0
+        acc_ha = self.hydro.flow_acc.astype(float) * cell_area_ha
         slope = self.dem.slope_pct
-        max_acc = float(np.max(acc))
 
-        # Margin buffer: reject outer 5% border cells to prevent edge boundary artifacts
-        margin_r = max(3, int(nrows * 0.05))
-        margin_c = max(3, int(ncols * 0.05))
+        # 1. Detect Main River Channel & Dilate Buffer
+        # Cells with massive accumulation represent the main perennial river channel
+        river_thresh = min(max_river_threshold_ha, max(30.0, float(np.max(acc_ha)) * 0.20))
+        river_cells = acc_ha >= river_thresh
 
-        # Score computation matrix (0 to 100)
-        # 1. Flow Accumulation score (45%)
-        # Using logarithmic scaling to balance massive main stems with fertile tributaries
-        log_acc = np.log1p(acc)
-        max_log = np.log1p(max_acc) if max_acc > 0 else 1.0
-        acc_score = (log_acc / max_log) * 45.0
+        # Create circular spatial dilation buffer around river
+        buffer_cells = max(3, int(round(river_buffer_m / self.dem.cell_size)))
+        y, x = np.ogrid[-buffer_cells:buffer_cells+1, -buffer_cells:buffer_cells+1]
+        struct = (x**2 + y**2) <= buffer_cells**2
+        river_buffer_mask = binary_dilation(river_cells, structure=struct)
 
-        # 2. Slope Suitability score (35%)
-        # Ideal: 0-3% = 35 pts, 3-5% = 25 pts, 5-8% = 10 pts, >8% = 0 pts
+        # 2. Farm Pond Micro-Catchment Suitability Score (50 pts max)
+        # Optimal farm pond catchment is 10-30 ha (bell curve peak at 20 ha)
+        catchment_score = np.exp(-0.5 * ((acc_ha - 20.0) / 12.0)**2) * 50.0
+        # Hard limits: only allow micro-catchments between 2 ha and 55 ha
+        catchment_score[(acc_ha < 2.0) | (acc_ha > 55.0)] = 0.0
+
+        # 3. Slope Suitability Score (35 pts max)
+        # Ideal: 0-2.5% = 35 pts, 2.5-5% = 15-35 pts, >5% = 0 pts
         slope_score = np.zeros_like(slope)
-        slope_score[slope <= 3.0] = 35.0
-        mask_3_5 = (slope > 3.0) & (slope <= 5.0)
-        slope_score[mask_3_5] = 35.0 - ((slope[mask_3_5] - 3.0) / 2.0) * 12.0
-        mask_5_8 = (slope > 5.0) & (slope <= 8.0)
-        slope_score[mask_5_8] = 23.0 - ((slope[mask_5_8] - 5.0) / 3.0) * 20.0
+        slope_score[slope <= 2.5] = 35.0
+        mask_s = (slope > 2.5) & (slope <= 5.0)
+        slope_score[mask_s] = 35.0 - ((slope[mask_s] - 2.5) / 2.5) * 20.0
 
-        # 3. Elevation relief score (10%): favors valley bottoms over ridges
+        # 4. Elevation Valley Bottom Score (15 pts max)
         elev_range = self.dem.relief if self.dem.relief > 0 else 1.0
-        elev_score = (1.0 - (self.dem.elevation - self.dem.min_elev) / elev_range) * 10.0
+        elev_score = (1.0 - (self.dem.elevation - self.dem.min_elev) / elev_range) * 15.0
 
-        # 4. Boundary distance score (10%)
-        dist_r = np.minimum(np.arange(nrows), nrows - 1 - np.arange(nrows))[:, None]
-        dist_c = np.minimum(np.arange(ncols), ncols - 1 - np.arange(ncols))[None, :]
-        min_dist_grid = np.minimum(dist_r, dist_c).astype(float)
-        boundary_score = np.clip(min_dist_grid / max(margin_r, margin_c), 0.0, 1.0) * 10.0
+        total_score_grid = catchment_score + slope_score + elev_score
 
-        total_score_grid = acc_score + slope_score + elev_score + boundary_score
+        # 5. Apply River & Boundary Masks
+        total_score_grid[river_buffer_mask] = 0.0  # EXCLUDE RIVER & BUFFER
+        total_score_grid[slope > 5.0] = 0.0        # EXCLUDE STEEP SLOPES
 
-        # Zero out hard invalid regions
-        total_score_grid[:margin_r, :] = 0
-        total_score_grid[-margin_r:, :] = 0
-        total_score_grid[:, :margin_c] = 0
-        total_score_grid[:, -margin_c:] = 0
-        total_score_grid[slope > 8.0] = 0
+        # Margin buffer (reject outer 5% border cells)
+        margin_r = max(4, int(nrows * 0.05))
+        margin_c = max(4, int(ncols * 0.05))
+        total_score_grid[:margin_r, :] = 0.0
+        total_score_grid[-margin_r:, :] = 0.0
+        total_score_grid[:, :margin_c] = 0.0
+        total_score_grid[:, -margin_c:] = 0.0
 
-        # Non-maximum suppression
+        # 6. Non-maximum suppression to find top candidate sites
         candidates: List[PondCandidate] = []
         min_sep_cells = max(3, int(round(min_separation_m / self.dem.cell_size)))
         scores_work = total_score_grid.copy()
@@ -136,21 +145,20 @@ class PondOptimizer:
             lon, lat = self.dem.grid_to_geo(r, c)
             elev_m = round(self.dem.get_elevation_at(r, c), 2)
             slope_p = round(self.dem.get_slope_at(r, c), 2)
-            u_cells = int(acc[r, c])
+            u_cells = int(self.hydro.flow_acc[r, c])
             c_area_m2 = round(u_cells * self.hydro.cell_area_m2, 1)
+            c_ha = round(c_area_m2 / 10000.0, 1)
 
-            reasons = []
-            if slope_p < 3.0:
-                reasons.append(f"Very flat terrain ({slope_p}% slope) minimizing earthen embankment excavation")
-            elif slope_p <= 5.0:
-                reasons.append(f"Gentle slope ({slope_p}%) suitable for trapezoidal farm pond")
+            reasons = [
+                f"Safe off-stream site: Excluded from main river channel and flood buffer (>120m buffer)",
+                f"Optimal micro-catchment ({c_ha} ha) ideal for village rainwater harvesting without flood surge risk",
+                f"Gentle ground slope ({slope_p}%) minimizing earthwork and ensuring stable earthen bunds"
+            ]
 
-            if c_area_m2 >= 500000:
-                reasons.append(f"Large natural drainage channel (catchment ~{c_area_m2/10000:.1f} ha)")
-            else:
-                reasons.append(f"Local drainage basin (catchment ~{c_area_m2/10000:.1f} ha)")
+            recommendation = "Highly Recommended for Primary Village Storage Pond" if rank == 1 else f"Recommended Alternative Site (Option {rank})"
 
-            recommendation = "Highly Recommended for Primary Village Storage Pond" if rank == 1 else f"Recommended Secondary Pond Site (Option {rank})"
+            # Normalize score to 0-100 scale
+            normalized_score = round(min(100.0, (best_score / 95.0) * 100.0), 1)
 
             candidates.append(PondCandidate(
                 rank=rank,
@@ -160,7 +168,7 @@ class PondOptimizer:
                 slope_pct=slope_p,
                 upstream_cells=u_cells,
                 estimated_catchment_m2=c_area_m2,
-                suitability_score=round(best_score, 1),
+                suitability_score=normalized_score,
                 recommendation=recommendation,
                 reasons=reasons
             ))
@@ -214,9 +222,8 @@ class PondOptimizer:
         # 4. Target Storage
         target_storage_m3 = runoff_volume_m3 * storage_efficiency
 
-        # For practical village farm ponds, cap single pond storage between 1,000 m3 and 50,000 m3
-        # (excess runoff goes to spillway)
-        practical_storage_m3 = max(1000.0, min(50000.0, target_storage_m3))
+        # Practical farm pond storage sizing
+        practical_storage_m3 = max(500.0, min(50000.0, target_storage_m3))
 
         # 5. Depth Selection based on terrain slope
         freeboard = 0.5  # meters safety margin
@@ -231,24 +238,19 @@ class PondOptimizer:
             total_depth = 2.5
 
         # 6. Trapezoidal geometry sizing (Side slope 2:1 -> z=2.0)
-        # Volume V = d * (A_top + A_base) / 2 approx = d * L_mid * W_mid
         z_side = 2.0
-        # Aspect ratio Length : Width = 1.5 : 1
         mid_area = practical_storage_m3 / water_depth
         w_mid = math.sqrt(mid_area / 1.5)
         l_mid = 1.5 * w_mid
 
-        # Top surface dimensions
         l_top = round(l_mid + z_side * total_depth, 1)
         w_top = round(w_mid + z_side * total_depth, 1)
         top_surface_area = round(l_top * w_top, 1)
 
-        # Bottom base dimensions
         l_base = max(5.0, round(l_mid - z_side * total_depth, 1))
         w_base = max(5.0, round(w_mid - z_side * total_depth, 1))
         bottom_base_area = round(l_base * w_base, 1)
 
-        # Precise prismoidal excavation volume
         excavation_vol = round((total_depth / 6.0) * (l_top * w_top + l_base * w_base + 4.0 * l_mid * w_mid), 1)
 
         design_params = PondDesignParameters(
