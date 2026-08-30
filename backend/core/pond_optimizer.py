@@ -71,59 +71,65 @@ class PondOptimizer:
     def find_candidate_pond_sites(
         self,
         top_k: int = 3,
-        min_separation_m: float = 350.0,
-        river_buffer_m: float = 120.0,
-        max_river_threshold_ha: float = 60.0
+        min_separation_m: float = 400.0,
+        river_buffer_m: float = 300.0,
+        river_acc_threshold_ha: float = 25.0
     ) -> List[PondCandidate]:
         """
         Identifies top K suitable village pond locations:
-        - Detects and strictly EXCLUDES the main river course / perennial floodways (acc > 60 ha + buffer).
-        - Targets optimal micro-catchments (5 to 45 ha) for agricultural / village ponds.
-        - Prioritizes gentle slopes (< 3%) to minimize excavation and ensure embankment stability.
+        - Detects and strictly EXCLUDES the main river course, riverbanks, and floodplains.
+        - Targets elevated agricultural farm fields (10 to 30 ha micro-catchments).
+        - Prioritizes gentle slopes (< 3%) for stable earthen bund construction.
         - Applies non-maximum spatial suppression to provide distinct geographic alternatives.
         """
         nrows, ncols = self.dem.nrows, self.dem.ncols
         cell_area_ha = self.hydro.cell_area_m2 / 10000.0
         acc_ha = self.hydro.flow_acc.astype(float) * cell_area_ha
         slope = self.dem.slope_pct
+        elev = self.dem.elevation
+        relief = self.dem.relief if self.dem.relief > 0 else 1.0
 
-        # 1. Detect Main River Channel & Dilate Buffer
-        # Cells with massive accumulation represent the main perennial river channel
-        river_thresh = min(max_river_threshold_ha, max(30.0, float(np.max(acc_ha)) * 0.20))
-        river_cells = acc_ha >= river_thresh
+        # 1. Comprehensive River & Floodplain Detection & Buffer
+        # Identify main river stem
+        river_thresh = min(river_acc_threshold_ha, max(15.0, float(np.max(acc_ha)) * 0.15))
+        river_stem = acc_ha >= river_thresh
 
-        # Create circular spatial dilation buffer around river
-        buffer_cells = max(3, int(round(river_buffer_m / self.dem.cell_size)))
+        # 300m spatial dilation buffer around river stem
+        buffer_cells = max(5, int(round(river_buffer_m / self.dem.cell_size)))
         y, x = np.ogrid[-buffer_cells:buffer_cells+1, -buffer_cells:buffer_cells+1]
         struct = (x**2 + y**2) <= buffer_cells**2
-        river_buffer_mask = binary_dilation(river_cells, structure=struct)
+        river_corridor_mask = binary_dilation(river_stem, structure=struct)
 
-        # 2. Farm Pond Micro-Catchment Suitability Score (50 pts max)
-        # Optimal farm pond catchment is 10-30 ha (bell curve peak at 20 ha)
-        catchment_score = np.exp(-0.5 * ((acc_ha - 20.0) / 12.0)**2) * 50.0
-        # Hard limits: only allow micro-catchments between 2 ha and 55 ha
-        catchment_score[(acc_ha < 2.0) | (acc_ha > 55.0)] = 0.0
+        # Low valley floor flood zone (lowest 22% relief envelope connected to river)
+        low_floodplain = (elev < (self.dem.min_elev + 0.22 * relief)) & binary_dilation(river_stem, iterations=15)
+        river_exclusion_zone = river_corridor_mask | low_floodplain
+
+        # 2. Upland Farm Pond Micro-Catchment Suitability Score (50 pts max)
+        # Optimal farm pond catchment is 10-25 ha (bell curve peak at 15 ha)
+        catchment_score = np.exp(-0.5 * ((acc_ha - 15.0) / 7.0)**2) * 50.0
+        # Hard limits: only allow micro-catchments between 3 ha and 35 ha
+        catchment_score[(acc_ha < 3.0) | (acc_ha > 35.0)] = 0.0
 
         # 3. Slope Suitability Score (35 pts max)
-        # Ideal: 0-2.5% = 35 pts, 2.5-5% = 15-35 pts, >5% = 0 pts
+        # Ideal: 0-2% = 35 pts, 2-4% = 15-35 pts, >4% = 0 pts
         slope_score = np.zeros_like(slope)
-        slope_score[slope <= 2.5] = 35.0
-        mask_s = (slope > 2.5) & (slope <= 5.0)
-        slope_score[mask_s] = 35.0 - ((slope[mask_s] - 2.5) / 2.5) * 20.0
+        slope_score[slope <= 2.0] = 35.0
+        mask_s = (slope > 2.0) & (slope <= 4.0)
+        slope_score[mask_s] = 35.0 - ((slope[mask_s] - 2.0) / 2.0) * 20.0
 
-        # 4. Elevation Valley Bottom Score (15 pts max)
-        elev_range = self.dem.relief if self.dem.relief > 0 else 1.0
-        elev_score = (1.0 - (self.dem.elevation - self.dem.min_elev) / elev_range) * 15.0
+        # 4. Upland Agricultural Elevation Score (15 pts max)
+        # Favors upland farming plateaus safe above the river valley
+        elev_score = np.clip((elev - (self.dem.min_elev + 6.0)) / (relief - 6.0), 0.0, 1.0) * 15.0
 
         total_score_grid = catchment_score + slope_score + elev_score
 
-        # 5. Apply River & Boundary Masks
-        total_score_grid[river_buffer_mask] = 0.0  # EXCLUDE RIVER & BUFFER
-        total_score_grid[slope > 5.0] = 0.0        # EXCLUDE STEEP SLOPES
+        # 5. Apply River & Slope Exclusions
+        total_score_grid[river_exclusion_zone] = 0.0  # ZERO OUT ENTIRE RIVER & FLOOD BUFFER
+        total_score_grid[slope > 4.0] = 0.0           # EXCLUDE STEEPER SLOPES
 
-        # Margin buffer (reject outer 5% border cells)
-        margin_r = max(4, int(nrows * 0.05))
-        margin_c = max(4, int(ncols * 0.05))
+        # Margin buffer (reject outer 8% border cells)
+        margin_r = max(5, int(nrows * 0.08))
+        margin_c = max(5, int(ncols * 0.08))
         total_score_grid[:margin_r, :] = 0.0
         total_score_grid[-margin_r:, :] = 0.0
         total_score_grid[:, :margin_c] = 0.0
@@ -131,7 +137,7 @@ class PondOptimizer:
 
         # 6. Non-maximum suppression to find top candidate sites
         candidates: List[PondCandidate] = []
-        min_sep_cells = max(3, int(round(min_separation_m / self.dem.cell_size)))
+        min_sep_cells = max(4, int(round(min_separation_m / self.dem.cell_size)))
         scores_work = total_score_grid.copy()
 
         for rank in range(1, top_k + 1):
@@ -150,8 +156,8 @@ class PondOptimizer:
             c_ha = round(c_area_m2 / 10000.0, 1)
 
             reasons = [
-                f"Safe off-stream site: Excluded from main river channel and flood buffer (>120m buffer)",
-                f"Optimal micro-catchment ({c_ha} ha) ideal for village rainwater harvesting without flood surge risk",
+                f"Safe upland agricultural field: Fully excluded from main riverbed and flood buffer (>300m buffer)",
+                f"Optimal farm micro-catchment ({c_ha} ha) ideal for local crop irrigation without flood risk",
                 f"Gentle ground slope ({slope_p}%) minimizing earthwork and ensuring stable earthen bunds"
             ]
 
