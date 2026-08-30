@@ -135,9 +135,15 @@ function setMode(mode) {
 }
 
 async function loadSampleFile() {
-    showLoading(true, "Loading sample contour map...");
+    showLoading(true, "Loading sample contour map (contours_1m.kml)...");
     try {
-        const resp = await fetch("/contours_1m.kml");
+        let resp = await fetch("/contours_1m.kml");
+        if (!resp.ok) {
+            resp = await fetch("/static/contours_1m.kml");
+        }
+        if (!resp.ok) {
+            throw new Error("Could not fetch sample map file.");
+        }
         const blob = await resp.blob();
         const file = new File([blob], "contours_1m.kml", { type: "application/vnd.google-earth.kml+xml" });
         setFile(file);
@@ -145,7 +151,7 @@ async function loadSampleFile() {
         runAnalysis();
     } catch (err) {
         showLoading(false);
-        alert("Please drag and drop contours_1m.kml into the upload area.");
+        alert("Please drag and drop the contours_1m.kml file from your computer into the upload box.");
     }
 }
 

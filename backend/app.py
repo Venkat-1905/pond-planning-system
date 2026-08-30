@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 
 from backend.core.schemas import (
     LandCoverType,
@@ -58,6 +58,25 @@ def health_check():
     }
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
+
+
+@app.get("/contours_1m.kml", include_in_schema=False)
+async def serve_sample_kml():
+    """Serves the sample contour file for quick testing in the web UI."""
+    sample_paths = [
+        os.path.join(os.path.dirname(__file__), "static", "contours_1m.kml"),
+        os.path.join(os.path.dirname(__file__), "..", "contours_1m.kml"),
+        "/home/venkat/Desktop/pond/contours_1m.kml"
+    ]
+    for p in sample_paths:
+        if os.path.exists(p):
+            return FileResponse(p, media_type="application/vnd.google-earth.kml+xml", filename="contours_1m.kml")
+    raise HTTPException(status_code=404, detail="Sample contours_1m.kml file not found.")
+
+
 def _process_uploaded_kml(file_bytes: bytes, filename: str):
     try:
         parsed_map = parse_kml_or_kmz(file_bytes, filename)
@@ -94,7 +113,7 @@ async def analyze_contour(
     """
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty. Please select a valid KML/KMZ contour file.")
 
     parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, file.filename or "contour.kml")
     candidates = optimizer.find_candidate_pond_sites(top_k=3)
@@ -159,7 +178,7 @@ async def find_catchment(
 
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty. Please select a valid KML/KMZ contour file.")
 
     parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, file.filename or "contour.kml")
 
@@ -263,7 +282,7 @@ async def process_all_unified(
     """
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty. Please select a valid KML/KMZ contour file.")
 
     parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, file.filename or "contour.kml")
     candidates = optimizer.find_candidate_pond_sites(top_k=3)
