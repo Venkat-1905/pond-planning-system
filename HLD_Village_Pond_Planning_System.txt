@@ -1,0 +1,500 @@
+
+================================================================================
+                    HIGH LEVEL DESIGN (HLD) DOCUMENT
+================================================================================
+
+                    AI-BASED VILLAGE POND PLANNING SYSTEM
+                            Assignment 1 - CSD
+
+                            Date: August 10, 2026
+================================================================================
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. PROBLEM STATEMENT AND OBJECTIVES                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1.1 PROBLEM STATEMENT
+─────────────────────
+Water conservation is a critical challenge in rural India. Many villages face
+acute water shortages during dry seasons due to lack of proper rainwater
+harvesting infrastructure. Identifying optimal locations for pond construction
+is a complex task that requires analysis of multiple geospatial parameters
+including terrain elevation, catchment area, land ownership, rainfall patterns,
+and estimated storage capacity. Manual site selection is time-consuming,
+inaccurate, and requires specialized expertise that is often unavailable at the
+village level.
+
+1.2 OBJECTIVES
+──────────────
+The primary objective is to develop an AI-assisted web application that enables
+village administrators to:
+
+  (a) Select a geographic region and visualize satellite imagery with terrain
+      contours.
+
+  (b) Automatically identify suitable government/available land parcels for
+      pond construction.
+
+  (c) Compute the catchment area contributing surface runoff to a selected
+      pond location using Digital Elevation Model (DEM) data.
+
+  (d) Query and analyze historical rainfall data from public meteorological
+      APIs (IMD, Open-Meteo, NASA POWER).
+
+  (e) Estimate annual runoff volume using the Rational Method and empirical
+      hydrological models.
+
+  (f) Recommend optimal pond depth, surface area, and total storage capacity
+      based on terrain slope and runoff estimates.
+
+  (g) Present all results through an interactive map overlay with downloadable
+      reports for administrative use.
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 2. OVERALL SYSTEM ARCHITECTURE                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+The system follows a modular 3-tier architecture:
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  PRESENTATION TIER  (Frontend)                              │
+    │  • Interactive Map (Leaflet / Mapbox)                       │
+    │  • Dashboard & Visualization Panel                          │
+    │  • Location Picker & Drawing Tools                          │
+    └───────────────────────┬─────────────────────────────────────┘
+                            │ HTTP/REST (JSON)
+    ┌───────────────────────▼─────────────────────────────────────┐
+    │  APPLICATION TIER  (Backend)                                │
+    │  • Flask/FastAPI REST Server                                │
+    │  • Authentication & Authorization                           │
+    │  • Business Logic Layer                                     │
+    │  • Three Core Processing Modules:                           │
+    │      - Terrain Analysis Module                              │
+    │      - Catchment Analysis Module                            │
+    │      - Rainfall & Storage Estimation Module                 │
+    └───────────────────────┬─────────────────────────────────────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        │                   │                   │
+    ┌───▼───┐         ┌────▼────┐        ┌────▼────┐
+    │External│         │ Database │        │ Processing│
+    │  APIs  │         │  Layer   │        │  Engine   │
+    └───┬───┘         └────┬────┘        └────┬────┘
+        │                  │                   │
+   [Elevation]        [MongoDB /          [OpenCV,
+   [Rainfall]          PostgreSQL]          NumPy,
+   [Satellite]         • Terrain cache      SciPy]
+   [Land Records]      • Rainfall history
+                       • Pond designs
+                       • User sessions
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 3. FUNCTIONAL REQUIREMENTS AND PROJECT WORKFLOW                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+3.1 FUNCTIONAL REQUIREMENTS (FR)
+────────────────────────────────
+
+FR-1: Satellite Imagery Display
+     → Load and display high-resolution satellite imagery for any selected
+       village/region using Google Maps API or OpenStreetMap tiles.
+
+FR-2: Contour Visualization
+     → Fetch elevation data via OpenElevation API or SRTM DEM, process using
+       OpenCV/NumPy, and generate contour lines overlaid on the map.
+
+FR-3: Suitable Land Identification
+     → Identify flat/low-slope regions on government/public land by cross-
+       referencing elevation slope analysis with government land boundary data.
+
+FR-4: Catchment Area Estimation
+     → Delineate the watershed (catchment) area for a selected pond location
+       using flow-direction and flow-accumulation algorithms on DEM data.
+
+FR-5: Historical Rainfall Data Query
+     → Integrate with IMD Historical Rainfall API, Open-Meteo, or NASA POWER
+       API to fetch 10-30 years of precipitation data for the selected region.
+
+FR-6: Runoff Volume Estimation
+     → Calculate runoff volume using:  V = C × R × A
+       where C = Runoff Coefficient, R = Rainfall depth, A = Catchment area.
+
+FR-7: Pond Depth & Storage Recommendation
+     → Recommend pond dimensions based on terrain slope, soil type (if avail),
+       and required storage. Formula: Storage = V_runoff × efficiency_factor.
+
+FR-8: Interactive Result Overlay
+     → Display on map: selected pond location (marker), catchment boundary
+       (polygon), contour lines, rainfall statistics panel, recommended pond
+       dimensions card, and estimated runoff volume indicator.
+
+3.2 PROJECT WORKFLOW
+────────────────────
+
+  Step 1: USER LOGIN → Village admin logs into the web application.
+
+  Step 2: REGION SELECTION → Admin enters village name or drops a pin on map.
+                          Backend fetches bounding box coordinates.
+
+  Step 3: TERRAIN FETCH → Backend calls Elevation API to get DEM raster for
+                         the bounding box. Data cached in database.
+
+  Step 4: CONTOUR GENERATION → DEM processed with OpenCV to extract contour
+                              lines at 1m or 2m intervals. Overlaid on map.
+
+  Step 5: SITE SELECTION → Admin clicks on map to propose a pond location.
+                          System validates if point lies on suitable land.
+
+  Step 6: CATCHMENT DELINEATION → Algorithm computes upslope contributing
+                                 area using D8 flow-direction algorithm.
+                                 Catchment polygon drawn on map.
+
+  Step 7: RAINFALL QUERY → Backend queries rainfall API for historical data.
+                          Computes average annual rainfall (R_avg).
+
+  Step 8: RUNOFF CALCULATION → Applies Rational Method: Q = Ci × A × R_avg
+                              (with unit conversions). Result stored.
+
+  Step 9: POND DESIGN → System recommends depth (2-4m typical), surface area,
+                       and total storage based on Q and terrain slope.
+
+  Step 10: RESULT DISPLAY → All layers overlaid on interactive map. Admin can
+                           download PDF report with all statistics.
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 4. PROPOSED TECHNOLOGY STACK                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+4.1 FRONTEND
+────────────
+  • Framework: React.js (or plain HTML5 + JavaScript + CSS3)
+  • Map Library: Leaflet.js (open-source, lightweight) OR Mapbox GL JS
+  • Visualization: Chart.js (for rainfall graphs, bar charts)
+  • UI Components: Tailwind CSS / Bootstrap 5
+  • Build Tool: Vite (if using React)
+
+4.2 BACKEND
+───────────
+  • Framework: Flask (Python) — lightweight, easy for geospatial processing
+               OR FastAPI — async support, automatic API docs
+  • Language: Python 3.10+
+  • WSGI/ASGI: Gunicorn + Uvicorn (for FastAPI)
+
+4.3 DATABASE
+────────────
+  • Primary: PostgreSQL with PostGIS extension (for geospatial queries)
+  • Alternative: MongoDB (for flexible schema storing DEM tiles, rainfall JSON)
+  • Cache: Redis (for API response caching, session management)
+
+4.4 EXTERNAL APIs
+─────────────────
+  • Elevation Data:
+    - open-meteo elevation
+    - OpenElevation API (free, open-source)
+    - SRTM 30m/90m DEM via NASA Earthdata (free, high accuracy)
+
+  • Rainfall Data:
+    - IMD Historical Weather Data API (India-specific)
+    - Open-Meteo API (free, no API key, global coverage)
+    - NASA POWER API (satellite-derived rainfall, free)
+
+  • Satellite Imagery:
+    - OpenStreetMap (free, community-driven)
+    - Sentinel-2 (ESA, free, 10m resolution)
+
+  • Land Records (if available):
+    - State Bhulekh / Dharani APIs (government land records)
+    - SWIS (Survey of India) boundary data
+
+4.5 PYTHON LIBRARIES
+────────────────────
+  • Geospatial: GeoPandas, Shapely, Rasterio, PyProj
+  • Image Processing: OpenCV, PIL/Pillow, NumPy
+  • Scientific: SciPy, NumPy, Pandas
+  • Hydrology: WhiteboxTools (WBT) — for watershed delineation
+  • ML/AI: Scikit-learn (for site suitability scoring/classification)
+  • API: Requests, Flask-RESTful, FastAPI
+  • Database: SQLAlchemy, Psycopg2, PyMongo
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 5. API DESIGN (MAJOR ENDPOINTS)                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+All endpoints follow REST conventions. Base URL: /api/v1/
+
+5.1 AUTHENTICATION
+──────────────────
+  POST   /auth/register          → Register new village admin
+  POST   /auth/login             → Login, returns JWT token
+  POST   /auth/logout            → Invalidate token
+
+5.2 TERRAIN & LOCATION
+──────────────────────
+  GET    /location/search?q={village_name}
+       → Returns lat/lon bounding box for village (using Nominatim/OSM)
+
+  GET    /terrain/elevation?lat={}&lon={}&radius={}
+       → Returns elevation raster (DEM) for region
+
+  GET    /terrain/contours?lat={}&lon={}&interval={}
+       → Returns GeoJSON contour lines at specified interval
+
+  GET    /terrain/slope?lat={}&lon={}&radius={}
+       → Returns slope map (degrees) as GeoJSON/grid
+
+5.3 CATCHMENT ANALYSIS
+──────────────────────
+  POST   /catchment/delineate
+       Body: { "pond_lat": float, "pond_lon": float, "dem_resolution": int }
+       → Returns catchment boundary polygon (GeoJSON) + area in sq.km
+
+  GET    /catchment/area?pond_lat={}&pond_lon={}
+       → Returns pre-computed catchment area
+
+5.4 RAINFALL DATA
+─────────────────
+  GET    /rainfall/historical?lat={}&lon={}&start_year={}&end_year={}
+       → Returns annual/monthly rainfall time series (JSON)
+
+  GET    /rainfall/statistics?lat={}&lon={}
+       → Returns avg, max, min rainfall + monsoon intensity
+
+5.5 POND PLANNING
+─────────────────
+  POST   /pond/analyze
+       Body: {
+         "pond_lat": float,
+         "pond_lon": float,
+         "catchment_area_km2": float,
+         "rainfall_mm": float,
+         "land_type": "government"
+       }
+       → Returns: {
+           "recommended_depth_m": float,
+           "surface_area_m2": float,
+           "storage_capacity_m3": float,
+           "runoff_volume_m3": float,
+           "suitability_score": float (0-100)
+         }
+
+  POST   /pond/design
+       Body: { "pond_lat": float, "pond_lon": float, "target_storage_m3": float }
+       → Returns optimized dimensions (length × width × depth)
+
+5.6 REPORTING
+─────────────
+  GET    /report/generate?pond_lat={}&pond_lon={}&format=pdf
+       → Generates downloadable PDF report with all overlays
+
+  GET    /report/download/{report_id}
+       → Downloads the generated report file
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 6. ALGORITHMS AND METHODOLOGY                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+6.1 TERRAIN ELEVATION PROCESSING
+────────────────────────────────
+  Input: DEM raster (GeoTIFF / JSON grid) from Elevation API
+  Steps:
+    1. Parse elevation matrix using NumPy/Rasterio
+    2. Apply Gaussian smoothing to reduce noise (OpenCV cv2.GaussianBlur)
+    3. Generate contour lines using marching squares algorithm
+       (OpenCV cv2.findContours on thresholded elevation bands)
+    4. Convert pixel contours to GeoJSON using coordinate transformation
+  Output: GeoJSON MultiLineString of contour lines
+
+6.2 SLOPE ANALYSIS FOR SITE SUITABILITY
+───────────────────────────────────────
+  Input: DEM grid
+  Method: Calculate gradient magnitude using Sobel operators or finite
+          differences: slope = arctan(√((dz/dx)² + (dz/dy)²))
+  Suitability Rule: Pond sites require slope < 5-8% for stability
+  Output: Binary suitability mask (suitable vs. unsuitable pixels)
+
+6.3 CATCHMENT AREA DELINEATION (WATERSHED)
+──────────────────────────────────────────
+  Algorithm: D8 Flow Direction (Jenson & Domingue, 1988)
+  Steps:
+    1. Fill sinks in DEM using WhiteboxTools wbt.fill_depressions()
+    2. Compute flow direction (8 possible directions) for each cell
+    3. Compute flow accumulation (count of upstream cells)
+    4. Define catchment by all cells draining to the pond outlet point
+    5. Vectorize catchment boundary using GeoPandas
+  Output: Catchment polygon (GeoJSON) + area in hectares/km²
+
+6.4 RUNOFF VOLUME ESTIMATION
+────────────────────────────
+  Method: Rational Method (for small catchments < 50 km²)
+  Formula:  Q = (C × R × A) / 1000
+    where:
+      Q = Runoff volume (m³)
+      C = Runoff coefficient (dimensionless, 0.2-0.8 based on land cover)
+          • Forest/vegetated: 0.2-0.4
+          • Agricultural: 0.4-0.6
+          • Barren/rocky: 0.6-0.8
+      R = Average annual rainfall (mm)
+      A = Catchment area (m²)
+
+  Alternative: SCS-CN Method (Soil Conservation Service Curve Number)
+    → More accurate for Indian conditions if soil data available
+
+6.5 POND DIMENSION RECOMMENDATION
+─────────────────────────────────
+  Constraints:
+    • Depth: 2m to 5m (based on evaporation rates and excavation cost)
+    • Side slope: 2:1 (H:V) for earthen ponds, 1:1 for lined ponds
+    • Freeboard: 0.5m above maximum water level
+
+  Calculation:
+    Target Storage = Q_runoff × Storage_Efficiency (typically 0.6-0.8)
+    Surface Area = Target Storage / Average Depth
+
+    If terrain is flat (slope < 3%): recommend rectangular pond, depth = 3m
+    If terrain is moderate (3-8%): recommend trapezoidal section, depth = 2.5m
+    If terrain is steep (>8%): NOT RECOMMENDED — flag as unsuitable
+
+6.6 SITE SUITABILITY SCORING (AI/ML Component)
+───────────────────────────────────────────────
+  Features: [elevation, slope, rainfall, catchment_size, land_type,
+             distance_to_road, distance_to_settlement]
+  Model: Random Forest Classifier (Scikit-learn)
+  Training: Labelled dataset of existing successful/failed pond sites
+  Output: Suitability score (0-100) + binary recommendation
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 7. EXPECTED CHALLENGES AND PROPOSED SOLUTIONS                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+CHALLENGE 1: Low-resolution DEM data for rural India
+────────────────────────────────────────────────────
+  Problem: Free APIs like OpenElevation may have coarse resolution (90m SRTM)
+           which is insufficient for small village ponds.
+  Solution: 
+    • Use SRTM 30m (1 arc-second) data from NASA Earthdata where available.
+    • Apply interpolation (bilinear/bicubic) to upsample DEM for smoother
+      contours.
+    • For very small ponds, accept that catchment estimate will be approximate
+      and document uncertainty in the report.
+
+CHALLENGE 2: Inconsistent or missing rainfall data for remote villages
+──────────────────────────────────────────────────────────────────────
+  Problem: IMD stations are sparse; many villages lack nearby weather stations.
+  Solution:
+    • Use satellite-derived rainfall (NASA POWER / CHIRPS) as primary source.
+    • Interpolate between nearest 3-4 stations using Inverse Distance Weighting.
+    • Display data source and confidence level in the UI.
+
+CHALLENGE 3: Government land boundary data is not digitally available
+─────────────────────────────────────────────────────────────────────
+  Problem: Land records APIs (Bhulekh) often lack precise boundary polygons.
+  Solution:
+    • Allow manual polygon drawing by admin for "proposed government land".
+    • Cross-check with OpenStreetMap land-use tags ("government", "public").
+    • Flag that land verification requires physical survey — system provides
+      "recommendation only, not legal clearance".
+
+CHALLENGE 4: Real-time DEM processing is computationally heavy
+──────────────────────────────────────────────────────────────
+  Problem: Watershed delineation on large DEM rasters can take 10-30 seconds,
+           causing poor UX.
+  Solution:
+    • Pre-process and cache DEM tiles for common village regions.
+    • Use asynchronous processing (Celery + Redis) for heavy computations.
+    • Show loading progress bar and process in background.
+    • Implement result caching — same coordinates return cached results.
+
+CHALLENGE 5: Accuracy of catchment delineation on flat terrain
+─────────────────────────────────────────────────────────────
+  Problem: D8 algorithm performs poorly in flat areas (common in plains).
+  Solution:
+    • Use D-infinity algorithm for flat terrain (multiple flow directions).
+    • Apply breaching/filling pre-processing to handle digital dams.
+    • Allow manual catchment boundary correction by the user.
+
+CHALLENGE 6: Offline availability in villages with poor internet
+───────────────────────────────────────────────────────────────
+  Problem: Many rural areas have intermittent 2G/3G connectivity.
+  Solution:
+    • Implement aggressive caching — once a region is analyzed, store all
+      tiles and results locally (IndexedDB / browser storage).
+    • Generate and allow download of offline-ready PDF reports.
+    • Keep frontend lightweight; minimize JS bundle size.
+
+CHALLENGE 7: API rate limits and reliability
+────────────────────────────────────────────
+  Problem: Free APIs have rate limits; downtime affects system availability.
+  Solution:
+    • Implement API fallback chain: Primary → Secondary → Tertiary source.
+    • Example: Open-Meteo (primary) → NASA POWER (fallback) → IMD (tertiary).
+    • Store fetched data in database to reduce repeated API calls.
+    • Add exponential backoff retry logic for failed requests.
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 8. DATA FLOW DIAGRAM (Simplified)                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌──────────┐
+    │  User    │
+    │ (Admin)  │
+    └────┬─────┘
+         │ Select village / drop pin
+         ▼
+    ┌────────────────────────┐
+    │   Frontend (React)     │
+    │  Map + Input Forms     │
+    └────┬───────────────────┘
+         │ POST /terrain/elevation
+         │ POST /catchment/delineate
+         ▼
+    ┌────────────────────────┐        ┌─────────────────┐
+    │   Backend (Flask)      │◄──────►│  Redis Cache    │
+    │  API Router + Logic    │        └─────────────────┘
+    └────┬───────────────────┘
+         │
+    ┌────┴────┬─────────────┬─────────────┐
+    ▼         ▼             ▼             ▼
+┌───────┐ ┌───────┐   ┌──────────┐  ┌──────────┐
+│Open   │ │NASA   │   │ Govt     │  │PostgreSQL│
+│Elev.  │ │POWER  │   │ Land API │  │+ PostGIS │
+│API    │ │API    │   │          │  │          │
+└───┬───┘ └───┬───┘   └────┬─────┘  └────┬─────┘
+    │         │            │             │
+    └─────────┴────────────┴─────────────┘
+              │
+              ▼
+    ┌────────────────────────┐
+    │  Python Processing     │
+    │  OpenCV + GeoPandas    │
+    │  + WhiteboxTools       │
+    └────┬───────────────────┘
+         │ GeoJSON + Metrics
+         ▼
+    ┌────────────────────────┐
+    │   Frontend Overlay     │
+    │  Map Layers + Charts   │
+    └────┬───────────────────┘
+         │ Download Report
+         ▼
+    ┌──────────┐
+    │   PDF    │
+    │  Report  │
+    └──────────┘
+
+
+================================================================================
+                              END OF HLD DOCUMENT
+================================================================================
+
+Prepared by: [Your Name]
+Roll No: [Your Roll Number]
+Date: August 10, 2026
+Course: CSD (Computer System Design)

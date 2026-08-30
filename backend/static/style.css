@@ -1,0 +1,61 @@
+/* Custom Scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.6);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(71, 85, 105, 0.6);
+    border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.9);
+}
+
+/* Leaflet Customization */
+.leaflet-container {
+    background-color: #020617;
+    font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+    background: #0f172a;
+    color: #f8fafc;
+    border: 1px solid #334155;
+    border-radius: 0.75rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+.leaflet-popup-tip {
+    background: #0f172a;
+    border: 1px solid #334155;
+}
+
+/* Custom Marker Styling */
+.custom-pond-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pulse-ring {
+    border: 3px solid #10b981;
+    border-radius: 50%;
+    height: 28px;
+    width: 28px;
+    position: absolute;
+    animation: pulsate 2s ease-out infinite;
+    opacity: 0;
+}
+
+@keyframes pulsate {
+    0% {
+        transform: scale(0.6);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1.8);
+        opacity: 0;
+    }
+}
