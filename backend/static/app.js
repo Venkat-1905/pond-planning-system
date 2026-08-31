@@ -291,14 +291,7 @@ function renderResultsOnMap(data) {
 
     t.recommended_pond_sites.forEach((site) => {
         const isPrimary = site.rank === 1;
-        const iconHtml = `
-            <div class="relative flex items-center justify-center">
-                ${isPrimary ? `<div class="pulse-ring"></div>` : ""}
-                <div class="w-7 h-7 rounded-full ${isPrimary ? "bg-emerald-500 border-2 border-white text-slate-950" : "bg-blue-600 border border-slate-200 text-white"} flex items-center justify-center font-bold text-xs shadow-lg">
-                    ${site.rank}
-                </div>
-            </div>
-        `;
+        const iconHtml = `<div class="custom-pond-marker ${isPrimary ? "primary" : "secondary"}">${site.rank}</div>`;
 
         const customIcon = L.divIcon({
             html: iconHtml,
@@ -329,7 +322,7 @@ function renderResultsOnMap(data) {
 
     t.recommended_pond_sites.forEach((site) => {
         const card = document.createElement("div");
-        card.className = `p-3 rounded-lg border text-xs cursor-pointer transition ${site.rank === 1 ? "bg-emerald-950/40 border-emerald-500/50" : "bg-slate-800/80 border-slate-700 hover:border-slate-600"}`;
+        card.className = `candidate-card ${site.rank === 1 ? "primary" : ""}`;
         card.innerHTML = `
             <div class="flex justify-between items-center mb-1">
                 <span class="font-bold text-white">#${site.rank} Pond Site (${site.suitability_score}/100)</span>
