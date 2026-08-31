@@ -99,7 +99,7 @@ def _process_uploaded_kml(file_bytes: bytes, filename: str):
 
 
 @app.post("/analyzeContour", response_model=TerrainAnalysisResponse, tags=["Terrain Analysis"])
-@app.post("/api/v1/analyzeContour", response_model=TerrainAnalysisResponse, tags=["Terrain Analysis"])
+@app.post("/api/v1/analyzeContour", response_model=TerrainAnalysisResponse, include_in_schema=False)
 async def analyze_contour(
     file: UploadFile = File(..., description="Contour map in KML or KMZ format"),
     include_contours_geojson: bool = Query(False, description="Whether to include full contour GeoJSON (can increase payload size)")
@@ -154,7 +154,7 @@ async def analyze_contour(
 
 
 @app.post("/findCatchment", response_model=CatchmentResponse, tags=["Catchment & Hydrology"])
-@app.post("/api/v1/findCatchment", response_model=CatchmentResponse, tags=["Catchment & Hydrology"])
+@app.post("/api/v1/findCatchment", response_model=CatchmentResponse, include_in_schema=False)
 async def find_catchment(
     file: UploadFile = File(..., description="Contour map in KML or KMZ format"),
     pond_lat: Optional[float] = Form(None, description="Proposed pond latitude (leave empty for auto-detection)"),
@@ -239,7 +239,7 @@ async def find_catchment(
 
 
 @app.post("/pond/analyze", tags=["Pond Design"])
-@app.post("/api/v1/pond/analyze", tags=["Pond Design"])
+@app.post("/api/v1/pond/analyze", include_in_schema=False)
 async def analyze_pond_design(body: PondAnalyzeRequest):
     """
     Standalone pond design endpoint using Rational Method for pre-computed catchment areas.
@@ -266,7 +266,7 @@ async def analyze_pond_design(body: PondAnalyzeRequest):
 
 
 @app.post("/processAll", response_model=UnifiedProcessResponse, tags=["Unified Pipeline"])
-@app.post("/api/v1/processAll", response_model=UnifiedProcessResponse, tags=["Unified Pipeline"])
+@app.post("/api/v1/processAll", response_model=UnifiedProcessResponse, include_in_schema=False)
 async def process_all_unified(
     file: UploadFile = File(..., description="Contour map in KML or KMZ format"),
     pond_lat: Optional[float] = Form(None),

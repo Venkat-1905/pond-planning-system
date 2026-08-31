@@ -2,7 +2,7 @@
 # ==============================================================================
 # DEPLOYMENT SCRIPT FOR VILLAGE POND PLANNING SYSTEM
 # Target Server: stu9_sys1 (10.1.75.51) | SSH Port: 2233
-# Allocated Ports: 5233 (Primary), 6233, 7233, 3233, 4233
+# Allocated Ports: 5000 (Primary), 6000, 7000, 3000, 4000
 # ==============================================================================
 
 set -e
@@ -47,9 +47,9 @@ sleep 1
 echo "Starting Uvicorn server on port ${APP_PORT}..."
 nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port ${APP_PORT} > server_${APP_PORT}.log 2>&1 &
 
-# Also optionally launch on backup ports 6233 and 7233
-nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 6233 > server_6233.log 2>&1 &
-nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 7233 > server_7233.log 2>&1 &
+# Also optionally launch on backup ports 6000 and 7000
+nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 6000 > server_6000.log 2>&1 &
+nohup python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 7000 > server_7000.log 2>&1 &
 
 sleep 3
 
@@ -67,6 +67,6 @@ echo ""
 echo " Primary Working URLs:"
 echo "   - http://${REMOTE_HOST}:${APP_PORT}/       (Web Dashboard UI)"
 echo "   - http://${REMOTE_HOST}:${APP_PORT}/docs   (Interactive Swagger API)"
-echo "   - http://${REMOTE_HOST}:6233/              (Secondary Port)"
-echo "   - http://${REMOTE_HOST}:7233/              (Secondary Port)"
+echo "   - http://${REMOTE_HOST}:6000/              (Secondary Port)"
+echo "   - http://${REMOTE_HOST}:7000/              (Secondary Port)"
 echo "========================================================================"

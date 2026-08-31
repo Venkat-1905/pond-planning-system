@@ -33,7 +33,7 @@ pip install -r requirements.txt
 
 ### 2. Run the Backend API Server
 ```bash
-uvicorn backend.app:app --host 0.0.0.0 --port 5233 --reload
+uvicorn backend.app:app --host 0.0.0.0 --port 5000 --reload
 ```
 - **Web Dashboard:** [http://localhost:5233/](http://localhost:5233/)
 - **Interactive OpenAPI Console:** [http://localhost:5233/docs](http://localhost:5233/docs)
@@ -95,9 +95,9 @@ pond/
 
 ## Evaluation & Deployment
 
-To deploy to remote cluster node `stu9_sys1` on port `5233` (password: `venkat19@`):
+To deploy to remote cluster node `stu9_sys1` on port `5233` (container port `5000`) (password: `venkat19@`):
 ```bash
-SSH_PORT=2233 PORT=5233 ./scripts/deploy.sh
+SSH_PORT=2233 PORT=5000 ./scripts/deploy.sh
 ```
 
 ---

@@ -26,7 +26,7 @@ The system features zero hardcoding, dynamic metric projection (WGS84 to Cartesi
 | **Unified Pipeline** | `POST /processAll` | One-shot analysis returning full terrain, candidates, watershed, and sizing | `http://10.1.75.51:5233/processAll` |
 | **Health Check** | `GET /health` | Service uptime and status monitor | `http://10.1.75.51:5233/health` |
 
-*(Note: Endpoints are also aliased under `/api/v1/*` and can be hosted across ports `5233`, `6233`, and `7233` on remote node `stu9_sys1` at `10.1.75.51`.)*
+*(Note: Endpoints are also aliased under `/api/v1/*` and can be hosted across ports `5000`, `6000`, and `7000` on remote node `stu9_sys1` at `10.1.75.51`.)*
 
 ---
 
@@ -307,12 +307,12 @@ curl -X POST "http://10.1.75.51:5233/pond/analyze"      -H "Content-Type: applic
 
 ## 5. Deployment Instructions for Remote VM (`stu9_sys1` to `stu9_sys4`)
 
-The system is configured to run on your allocated servers (`10.1.75.51` on ports `2233`–`2236`, exposed web ports `5233`, `6233`, `7233`).
+The system is configured to run on your allocated servers (`10.1.75.51` on ports `2233`–`2236`, exposed web ports `5233`, `6233`, `7233` (mapped to container ports `5000`, `6000`, `7000`)).
 
 ### Option A: Automated One-Command Deploy Script
 ```bash
-# Run deploy script targeting port 5233 (uses ssh port 2233)
-SSH_PORT=2233 PORT=5233 ./scripts/deploy.sh
+# Run deploy script targeting port 5000 (uses ssh port 2233)
+SSH_PORT=2233 PORT=5000 ./scripts/deploy.sh
 ```
 
 ### Option B: Manual SSH Deployment Step-by-Step
@@ -329,11 +329,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 4. Start FastAPI server on port 5233 (or 6233 / 7233)
-nohup uvicorn backend.app:app --host 0.0.0.0 --port 5233 > server.log 2>&1 &
+# 4. Start FastAPI server on port 5000 (or 6000 / 7000)
+nohup uvicorn backend.app:app --host 0.0.0.0 --port 5000 > server.log 2>&1 &
 
 # 5. Verify server is live
-curl http://localhost:5233/health
+curl http://localhost:5000/health
 ```
 
 ---
@@ -357,4 +357,4 @@ The developed AI-Based Village Pond Planning backend satisfies all assignment re
 - High-performance execution ($<1.5	ext{s}$ complete pipeline execution).
 - Clean JSON and GeoJSON outputs adhering to OpenGIS standards.
 - 100% automated test coverage across unit, hydrology, and API endpoints.
-- Ready for live evaluation on the institutional cluster on port `5233`.
+- Ready for live evaluation on the institutional cluster on port `5233` (container port `5000`).
