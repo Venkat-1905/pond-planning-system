@@ -10,7 +10,7 @@ set -e
 REMOTE_USER="student"
 REMOTE_HOST="10.1.75.51"
 REMOTE_SSH_PORT="${SSH_PORT:-2233}"
-APP_PORT="${PORT:-5233}"
+APP_PORT="${PORT:-5000}"
 REMOTE_DIR="pond_system"
 
 echo "========================================================================"
