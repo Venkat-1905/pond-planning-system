@@ -31,26 +31,24 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initMap() {
+    const mapEl = document.getElementById("map");
+    // Force explicit pixel dimensions on the map container
+    mapEl.style.width = "100%";
+    mapEl.style.height = "100%";
+    mapEl.style.minHeight = "400px";
+
     map = L.map("map", {
         center: [21.251, 81.297],
         zoom: 14,
         zoomControl: true
     });
 
+    // Use multiple tile providers for institutional network compatibility
     const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap",
-        maxZoom: 19
+        maxZoom: 19,
+        crossOrigin: true
     }).addTo(map);
-
-    const cartoDark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        attribution: "&copy; CARTO",
-        maxZoom: 19
-    });
-
-    L.control.layers({
-        "OpenStreetMap": osmLayer,
-        "Dark Canvas": cartoDark
-    }, null, { position: "topright" }).addTo(map);
 
     contourLayerGroup = L.layerGroup().addTo(map);
     catchmentLayerGroup = L.layerGroup().addTo(map);
@@ -62,7 +60,10 @@ function initMap() {
         }
     });
 
-    setTimeout(() => map.invalidateSize(), 300);
+    // Force multiple resize events to ensure Leaflet computes container size
+    setTimeout(() => map.invalidateSize(), 100);
+    setTimeout(() => map.invalidateSize(), 500);
+    setTimeout(() => map.invalidateSize(), 1500);
 }
 
 function initEventListeners() {
@@ -242,30 +243,36 @@ async function handleManualMapClick(lat, lng) {
 }
 
 function renderResultsOnMap(data) {
-    contourLayerGroup.clearLayers();
-    catchmentLayerGroup.clearLayers();
-    markerLayerGroup.clearLayers();
+    try {
+        contourLayerGroup.clearLayers();
+        catchmentLayerGroup.clearLayers();
+        markerLayerGroup.clearLayers();
 
-    const t = data.terrain_analysis;
-    let contourLayer = null;
+        const t = data.terrain_analysis;
 
-    if (t.contours_geojson) {
-        const minE = t.elevation_stats.min_m;
-        const maxE = t.elevation_stats.max_m;
+        // Force map resize before rendering
+        map.invalidateSize();
 
-        contourLayer = L.geoJSON(t.contours_geojson, {
-            style: (feature) => ({
-                color: getElevationColor(feature.properties.elevation, minE, maxE),
-                weight: 1.5,
-                opacity: 0.85
-            }),
-            onEachFeature: (feature, layer) => {
-                layer.bindTooltip(`Elev: ${feature.properties.elevation} m`, { sticky: true });
-            }
-        }).addTo(contourLayerGroup);
+        if (t.contours_geojson) {
+            const minE = t.elevation_stats.min_m;
+            const maxE = t.elevation_stats.max_m;
 
-        map.fitBounds(contourLayer.getBounds(), { padding: [30, 30] });
-    }
+            const contourLayer = L.geoJSON(t.contours_geojson, {
+                style: (feature) => ({
+                    color: getElevationColor(feature.properties.elevation, minE, maxE),
+                    weight: 1.5,
+                    opacity: 0.85
+                })
+            }).addTo(contourLayerGroup);
+
+            map.fitBounds(contourLayer.getBounds(), { padding: [30, 30] });
+            console.log("Contours rendered:", t.contours_geojson.features ? t.contours_geojson.features.length : 0, "features");
+        }
+
+        // If no contours, center on known region
+        if (!t.contours_geojson) {
+            map.setView([t.elevation_stats ? 21.251 : 21.251, 81.297], 14);
+        }
 
     if (data.catchment_geojson) {
         const catchmentLayer = L.geoJSON(data.catchment_geojson, {
@@ -328,6 +335,14 @@ function renderResultsOnMap(data) {
                 list.appendChild(card);
             });
         }
+    }
+
+    // Force final resize after all layers added
+    setTimeout(() => map.invalidateSize(), 200);
+
+    } catch (err) {
+        console.error("renderResultsOnMap error:", err);
+        alert("Map rendering error: " + err.message);
     }
 }
 
