@@ -40,16 +40,16 @@ function initMap() {
     const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap",
         maxZoom: 19
-    });
+    }).addTo(map);
 
     const cartoDark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
         attribution: "&copy; CARTO",
         maxZoom: 19
-    }).addTo(map);
+    });
 
     L.control.layers({
-        "Dark Canvas": cartoDark,
-        "OpenStreetMap": osmLayer
+        "OpenStreetMap": osmLayer,
+        "Dark Canvas": cartoDark
     }, null, { position: "topright" }).addTo(map);
 
     contourLayerGroup = L.layerGroup().addTo(map);
@@ -61,6 +61,8 @@ function initMap() {
             handleManualMapClick(e.latlng.lat, e.latlng.lng);
         }
     });
+
+    setTimeout(() => map.invalidateSize(), 300);
 }
 
 function initEventListeners() {
@@ -191,6 +193,7 @@ async function runAnalysis() {
         alert(`Error running analysis: ${error.message}`);
     } finally {
         showLoading(false);
+        setTimeout(() => map.invalidateSize(), 200);
     }
 }
 
@@ -234,6 +237,7 @@ async function handleManualMapClick(lat, lng) {
         alert(`Error delineating catchment: ${error.message}`);
     } finally {
         showLoading(false);
+        setTimeout(() => map.invalidateSize(), 200);
     }
 }
 
@@ -243,21 +247,24 @@ function renderResultsOnMap(data) {
     markerLayerGroup.clearLayers();
 
     const t = data.terrain_analysis;
+    let contourLayer = null;
 
     if (t.contours_geojson) {
         const minE = t.elevation_stats.min_m;
         const maxE = t.elevation_stats.max_m;
 
-        L.geoJSON(t.contours_geojson, {
+        contourLayer = L.geoJSON(t.contours_geojson, {
             style: (feature) => ({
                 color: getElevationColor(feature.properties.elevation, minE, maxE),
                 weight: 1.5,
-                opacity: 0.8
+                opacity: 0.85
             }),
             onEachFeature: (feature, layer) => {
                 layer.bindTooltip(`Elev: ${feature.properties.elevation} m`, { sticky: true });
             }
         }).addTo(contourLayerGroup);
+
+        map.fitBounds(contourLayer.getBounds(), { padding: [30, 30] });
     }
 
     if (data.catchment_geojson) {
