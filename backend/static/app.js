@@ -32,7 +32,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function initMap() {
     const mapEl = document.getElementById("map");
-    // Force explicit pixel dimensions on the map container
     mapEl.style.width = "100%";
     mapEl.style.height = "100%";
     mapEl.style.minHeight = "400px";
@@ -43,12 +42,31 @@ function initMap() {
         zoomControl: true
     });
 
-    // Use multiple tile providers for institutional network compatibility
+    // Base tile layers
     const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap",
         maxZoom: 19,
         crossOrigin: true
     }).addTo(map);
+
+    const satelliteLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        attribution: "&copy; Esri World Imagery",
+        maxZoom: 19,
+        crossOrigin: true
+    });
+
+    const cartoDark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        attribution: "&copy; CARTO",
+        maxZoom: 19,
+        crossOrigin: true
+    });
+
+    // Layer switcher control
+    L.control.layers({
+        "OpenStreetMap": osmLayer,
+        "🛰️ Satellite Imagery": satelliteLayer,
+        "Dark Canvas": cartoDark
+    }, null, { position: "topright" }).addTo(map);
 
     contourLayerGroup = L.layerGroup().addTo(map);
     catchmentLayerGroup = L.layerGroup().addTo(map);
@@ -422,7 +440,7 @@ function populateCatchmentSidebar(data) {
     const h = data.hydrology;
     const loc = data.pond_location;
 
-    setElText("res-mode-label", loc.selection_mode || "Manual Coordinate Site");
+    setElText("res-mode-label", loc.selection_mode || "Manual coordinate selection");
     setElText("stat-catchment-ha", `${c.hectares.toLocaleString()} ha`);
     setElText("stat-catchment-m2", `${Math.round(c.sq_meters).toLocaleString()} m² (${c.sq_km} km²)`);
 
@@ -439,4 +457,11 @@ function populateCatchmentSidebar(data) {
     setElText("stat-outlet-coords", `${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`);
     setElText("stat-outlet-elev", `${loc.elevation_m} m`);
     setElText("stat-outlet-slope", `${loc.slope_pct}%`);
+
+    // Use cached terrain stats from initial processAll run
+    if (currentResults && currentResults.terrain_analysis) {
+        const t = currentResults.terrain_analysis;
+        setElText("stat-relief", `${t.elevation_stats.relief_m} m (${t.elevation_stats.min_m}m - ${t.elevation_stats.max_m}m)`);
+        setElText("stat-flat-pct", `${t.slope_stats.flat_area_pct}%`);
+    }
 }

@@ -225,8 +225,8 @@ class PondOptimizer:
         # 4. Target Storage
         target_storage_m3 = runoff_volume_m3 * storage_efficiency
 
-        # Practical farm pond storage sizing
-        practical_storage_m3 = max(500.0, min(50000.0, target_storage_m3))
+        # Practical farm pond storage sizing (minimum floor only, no artificial cap)
+        practical_storage_m3 = max(500.0, target_storage_m3)
 
         # 5. Depth Selection based on terrain slope
         freeboard = 0.5  # meters safety margin
