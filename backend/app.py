@@ -18,6 +18,7 @@ from backend.core.schemas import (
     TerrainAnalysisResponse,
     CatchmentResponse,
     UnifiedProcessResponse,
+    PondDesignResponse,
     BoundingBox,
     ElevationStats,
     SlopeStats,
@@ -238,8 +239,8 @@ async def find_catchment(
     )
 
 
-@app.post("/pond/analyze", tags=["Pond Design"])
-@app.post("/api/v1/pond/analyze", include_in_schema=False)
+@app.post("/pond/analyze", response_model=PondDesignResponse, tags=["Pond Design"])
+@app.post("/api/v1/pond/analyze", response_model=PondDesignResponse, include_in_schema=False)
 async def analyze_pond_design(body: PondAnalyzeRequest):
     """
     Standalone pond design endpoint using Rational Method for pre-computed catchment areas.

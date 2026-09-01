@@ -279,3 +279,48 @@ class UnifiedProcessResponse(BaseModel):
     annual_runoff_volume_m3: float = Field(..., examples=[109188.0])
     pond_design: PondDesignParameters
     catchment_geojson: Dict[str, Any]
+
+
+class PondDesignResponse(BaseModel):
+    status: str = Field("success", examples=["success"])
+    pond_location: Dict[str, Any] = Field(..., examples=[{
+        "lat": 21.257951,
+        "lon": 81.300983
+    }])
+    catchment_area_m2: float = Field(..., examples=[152000.0])
+    hydrology: HydrologyParameters
+    annual_runoff_volume_m3: float = Field(..., examples=[78660.0])
+    pond_design: PondDesignParameters
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "status": "success",
+                "pond_location": {
+                    "lat": 21.257951,
+                    "lon": 81.300983
+                },
+                "catchment_area_m2": 152000.0,
+                "hydrology": {
+                    "land_cover": "agricultural",
+                    "runoff_coefficient": 0.45,
+                    "annual_rainfall_mm": 1150.0,
+                    "rainfall_data_source": "User specified / API override"
+                },
+                "annual_runoff_volume_m3": 78660.0,
+                "pond_design": {
+                    "target_storage_m3": 55062.0,
+                    "recommended_depth_m": 3.5,
+                    "water_depth_m": 3.0,
+                    "freeboard_m": 0.5,
+                    "top_surface_area_m2": 20333.0,
+                    "bottom_base_area_m2": 16462.0,
+                    "length_m": 172.9,
+                    "width_m": 117.6,
+                    "side_slope_ratio": "2:1 (H:V)",
+                    "excavation_volume_m3": 64289.8
+                }
+            }
+        }
+    }
+
