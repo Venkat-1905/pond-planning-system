@@ -18,7 +18,7 @@ def test_analyze_contour_api():
     with open(SAMPLE_KML_PATH, "rb") as f:
         resp = client.post(
             "/api/v1/analyzeContour",
-            files={"file": ("contours_1m.kml", f, "application/vnd.google-earth.kml+xml")}
+            files={"contour_map": ("contours_1m.kml", f, "application/vnd.google-earth.kml+xml")}
         )
     assert resp.status_code == 200
     data = resp.json()
@@ -27,6 +27,20 @@ def test_analyze_contour_api():
     assert len(data["recommended_pond_sites"]) >= 1
     assert data["bounds"]["area_km2"] > 0
     assert data["elevation_stats"]["relief_m"] > 0
+
+def test_process_all_with_contour_map():
+    with open(SAMPLE_KML_PATH, "rb") as f:
+        resp = client.post(
+            "/processAll",
+            files={"contour_map": ("contours_1m.kml", f, "application/vnd.google-earth.kml+xml")},
+            data={"land_cover": "agricultural"}
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert "terrain_analysis" in data
+    assert "pond_design" in data
+    assert "catchment_geojson" in data
 
 def test_find_catchment_auto():
     with open(SAMPLE_KML_PATH, "rb") as f:

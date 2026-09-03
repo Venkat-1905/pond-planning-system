@@ -102,28 +102,37 @@ def _process_uploaded_kml(file_bytes: bytes, filename: str):
 @app.post("/analyzeContour", response_model=TerrainAnalysisResponse, tags=["Terrain Analysis"])
 @app.post("/api/v1/analyzeContour", response_model=TerrainAnalysisResponse, include_in_schema=False)
 async def analyze_contour(
-    file: UploadFile = File(..., description="Contour map in KML or KMZ format"),
+    contour_map: Optional[UploadFile] = File(None, description="Contour map in KML or KMZ format"),
+    file: Optional[UploadFile] = File(None, description="Contour map in KML or KMZ format (alias)"),
     include_contours_geojson: bool = Query(False, description="Whether to include full contour GeoJSON (can increase payload size)")
 ):
     """
     Analyzes an uploaded KML/KMZ contour map:
+    - Accepts contour file under variable name 'contour_map' (or 'file').
     - Extracts contour isolines and elevation metrics.
     - Reconstructs a continuous Digital Elevation Model (DEM).
     - Computes slope gradients and flat area percentage.
     - Automatically discovers and ranks top suitable pond candidate sites.
     """
-    content = await file.read()
+    upload = contour_map or file
+    if upload is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required contour file. Please upload a KML/KMZ file under field name 'contour_map' (or 'file')."
+        )
+
+    content = await upload.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty. Please select a valid KML/KMZ contour file.")
 
-    parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, file.filename or "contour.kml")
+    parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, upload.filename or "contour.kml")
     candidates = optimizer.find_candidate_pond_sites(top_k=3)
 
     contours_geo = parsed_map.to_geojson(max_features=None) if include_contours_geojson else None
 
     return TerrainAnalysisResponse(
         status="success",
-        filename=file.filename or "contour.kml",
+        filename=upload.filename or "contour.kml",
         bounds=BoundingBox(
             min_lon=round(parsed_map.min_lon, 6),
             min_lat=round(parsed_map.min_lat, 6),
@@ -157,7 +166,8 @@ async def analyze_contour(
 @app.post("/findCatchment", response_model=CatchmentResponse, tags=["Catchment & Hydrology"])
 @app.post("/api/v1/findCatchment", response_model=CatchmentResponse, include_in_schema=False)
 async def find_catchment(
-    file: UploadFile = File(..., description="Contour map in KML or KMZ format"),
+    contour_map: Optional[UploadFile] = File(None, description="Contour map in KML or KMZ format"),
+    file: Optional[UploadFile] = File(None, description="Contour map in KML or KMZ format (alias)"),
     pond_lat: Optional[float] = Form(None, description="Proposed pond latitude (leave empty for auto-detection)"),
     pond_lon: Optional[float] = Form(None, description="Proposed pond longitude (leave empty for auto-detection)"),
     land_cover: LandCoverType = Form(LandCoverType.AGRICULTURAL, description="Dominant catchment land cover type"),
@@ -167,21 +177,29 @@ async def find_catchment(
 ):
     """
     Delineates the upstream catchment watershed and calculates pond design:
+    - Accepts contour file under variable name 'contour_map' (or 'file').
     - If pond_lat and pond_lon are provided, uses specified coordinates.
     - If omitted, auto-detects the optimal pond site with highest flow accumulation.
     - Traces upstream reverse D8 flow pathways to isolate contributing catchment.
     - Applies Rational Method to estimate annual runoff and recommended pond dimensions.
     """
+    upload = contour_map or file
+    if upload is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required contour file. Please upload a KML/KMZ file under field name 'contour_map' (or 'file')."
+        )
+
     if runoff_coeff is not None and not (0.1 <= runoff_coeff <= 0.9):
         raise HTTPException(status_code=400, detail="Runoff coefficient C must be between 0.1 and 0.9")
     if rainfall_mm is not None and rainfall_mm <= 0:
         raise HTTPException(status_code=400, detail="Rainfall depth R must be strictly positive")
 
-    content = await file.read()
+    content = await upload.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty. Please select a valid KML/KMZ contour file.")
 
-    parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, file.filename or "contour.kml")
+    parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, upload.filename or "contour.kml")
 
     # Determine outlet location
     if pond_lat is not None and pond_lon is not None:
@@ -269,9 +287,10 @@ async def analyze_pond_design(body: PondAnalyzeRequest):
 @app.post("/processAll", response_model=UnifiedProcessResponse, tags=["Unified Pipeline"])
 @app.post("/api/v1/processAll", response_model=UnifiedProcessResponse, include_in_schema=False)
 async def process_all_unified(
-    file: UploadFile = File(..., description="Contour map in KML or KMZ format"),
-    pond_lat: Optional[float] = Form(None),
-    pond_lon: Optional[float] = Form(None),
+    contour_map: Optional[UploadFile] = File(None, description="Contour map in KML or KMZ format"),
+    file: Optional[UploadFile] = File(None, description="Contour map in KML or KMZ format (alias)"),
+    pond_lat: Optional[float] = Form(None, description="Proposed pond latitude (leave empty for auto-detection)"),
+    pond_lon: Optional[float] = Form(None, description="Proposed pond longitude (leave empty for auto-detection)"),
     land_cover: LandCoverType = Form(LandCoverType.AGRICULTURAL),
     runoff_coeff: Optional[float] = Form(None),
     rainfall_mm: Optional[float] = Form(None),
@@ -280,12 +299,20 @@ async def process_all_unified(
     """
     Unified one-shot endpoint returning complete terrain analysis, candidates,
     selected pond watershed delineation, and design parameters.
+    - Accepts contour file under variable name 'contour_map' (or 'file').
     """
-    content = await file.read()
+    upload = contour_map or file
+    if upload is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required contour file. Please upload a KML/KMZ file under field name 'contour_map' (or 'file')."
+        )
+
+    content = await upload.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty. Please select a valid KML/KMZ contour file.")
 
-    parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, file.filename or "contour.kml")
+    parsed_map, dem, hydro, optimizer = _process_uploaded_kml(content, upload.filename or "contour.kml")
     candidates = optimizer.find_candidate_pond_sites(top_k=3)
 
     if pond_lat is not None and pond_lon is not None:
@@ -319,7 +346,7 @@ async def process_all_unified(
 
     terrain_resp = TerrainAnalysisResponse(
         status="success",
-        filename=file.filename or "contour.kml",
+        filename=upload.filename or "contour.kml",
         bounds=BoundingBox(
             min_lon=round(parsed_map.min_lon, 6),
             min_lat=round(parsed_map.min_lat, 6),

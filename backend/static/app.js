@@ -177,6 +177,7 @@ async function runAnalysis() {
     showLoading(true, "Parsing contours & interpolating DEM...");
 
     const formData = new FormData();
+    formData.append("contour_map", selectedFile);
     formData.append("file", selectedFile);
     
     const landEl = document.getElementById("land-cover-select");
@@ -225,6 +226,7 @@ async function handleManualMapClick(lat, lng) {
     showLoading(true, `Delineating catchment for (${lat.toFixed(4)}, ${lng.toFixed(4)})...`);
 
     const formData = new FormData();
+    formData.append("contour_map", selectedFile);
     formData.append("file", selectedFile);
     formData.append("pond_lat", lat);
     formData.append("pond_lon", lng);
