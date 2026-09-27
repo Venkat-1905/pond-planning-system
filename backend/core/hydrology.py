@@ -177,16 +177,20 @@ class HydrologyEngine:
 
         # If the point is in a natural topographic bowl (retention amphitheater) where filled DEM accumulation is small,
         # also capture the surrounding inward-sloping bowl basin
-        if np.sum(catchment_mask) * self.cell_area_m2 < 30000:
+        # Thresholds are relative to terrain properties for generalization
+        min_catchment_m2 = max(30000.0, 200 * self.cell_area_m2)  # At least 200 cells or 3 hectares
+        if np.sum(catchment_mask) * self.cell_area_m2 < min_catchment_m2:
             elev = self.dem.elevation
             outlet_elev = elev[outlet_row, outlet_col]
-            for dr in range(-20, 21):
-                for dc in range(-20, 21):
+            search_cells = max(10, min(30, int(round(220.0 / self.cell_size))))
+            elev_cap = outlet_elev + max(5.0, 0.4 * self.dem.relief)  # Scale with terrain relief
+            search_radius_m = search_cells * self.cell_size
+            for dr in range(-search_cells, search_cells + 1):
+                for dc in range(-search_cells, search_cells + 1):
                     nr, nc = outlet_row + dr, outlet_col + dc
                     if 0 <= nr < nrows and 0 <= nc < ncols:
                         dist_m = math.sqrt(dr**2 + dc**2) * self.cell_size
-                        # Include inward sloping cells in amphitheater up to rim (within 220m and <= outlet + 12m)
-                        if dist_m <= 220.0 and elev[nr, nc] <= (outlet_elev + 13.0):
+                        if dist_m <= search_radius_m and elev[nr, nc] <= elev_cap:
                             catchment_mask[nr, nc] = True
 
         cell_count = int(np.sum(catchment_mask))

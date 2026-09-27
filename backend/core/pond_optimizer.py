@@ -79,7 +79,7 @@ class PondOptimizer:
         """
         Identifies top K suitable village pond locations:
         - Detects natural terrain retention bowls using Topographic Position Index (TPI).
-        - Strictly excludes the western perennial river course and active floodway.
+        - Automatically identifies and excludes major river corridors and active floodways.
         - Prioritizes gentle slopes (< 3%) and natural water harvesting amphitheaters.
         - Applies non-maximum spatial suppression to provide distinct geographic alternatives.
         """

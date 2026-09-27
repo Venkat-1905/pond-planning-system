@@ -31,14 +31,9 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initMap() {
-    const mapEl = document.getElementById("map");
-    mapEl.style.width = "100%";
-    mapEl.style.height = "100%";
-    mapEl.style.minHeight = "400px";
-
     map = L.map("map", {
-        center: [21.251, 81.297],
-        zoom: 14,
+        center: [22.0, 80.0],
+        zoom: 5,
         zoomControl: true
     });
 
@@ -78,10 +73,12 @@ function initMap() {
         }
     });
 
-    // Force multiple resize events to ensure Leaflet computes container size
-    setTimeout(() => map.invalidateSize(), 100);
-    setTimeout(() => map.invalidateSize(), 500);
-    setTimeout(() => map.invalidateSize(), 1500);
+    // Keep Leaflet in sync whenever the container size changes
+    const mapEl = document.getElementById("map");
+    new ResizeObserver(() => map.invalidateSize()).observe(mapEl);
+    window.addEventListener("resize", () => map.invalidateSize());
+    setTimeout(() => map.invalidateSize(), 200);
+    setTimeout(() => map.invalidateSize(), 1000);
 }
 
 function initEventListeners() {
@@ -289,9 +286,12 @@ function renderResultsOnMap(data) {
             console.log("Contours rendered:", t.contours_geojson.features ? t.contours_geojson.features.length : 0, "features");
         }
 
-        // If no contours, center on known region
-        if (!t.contours_geojson) {
-            map.setView([t.elevation_stats ? 21.251 : 21.251, 81.297], 14);
+        // If no contours GeoJSON, center on the reported bounds
+        if (!t.contours_geojson && t.bounds) {
+            map.fitBounds([
+                [t.bounds.min_lat, t.bounds.min_lon],
+                [t.bounds.max_lat, t.bounds.max_lon]
+            ], { padding: [30, 30] });
         }
 
     if (data.catchment_geojson) {
