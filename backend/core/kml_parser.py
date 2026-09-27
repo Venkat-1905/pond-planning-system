@@ -100,6 +100,15 @@ class ParsedContourMap:
         features = []
         contours_to_use = self.contours[:max_features] if max_features else self.contours
         for idx, c in enumerate(contours_to_use):
+            coords = c.coordinates
+            # For web rendering, subsample long linestrings to keep payload lightweight
+            if len(coords) > 6:
+                sampled = coords[::2]
+                if sampled[-1] != coords[-1]:
+                    sampled.append(coords[-1])
+            else:
+                sampled = coords
+
             features.append({
                 "type": "Feature",
                 "properties": {
@@ -108,7 +117,7 @@ class ParsedContourMap:
                 },
                 "geometry": {
                     "type": "LineString",
-                    "coordinates": [[lon, lat] for lon, lat in c.coordinates]
+                    "coordinates": [[round(lon, 5), round(lat, 5)] for lon, lat in sampled]
                 }
             })
         return {
